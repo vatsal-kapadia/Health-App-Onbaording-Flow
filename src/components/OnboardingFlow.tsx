@@ -1,6 +1,5 @@
-
 import { useToast } from "@/components/ui/use-toast";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "./Layout";
 import MultiSelectChips from "./MultiSelectChips";
 import SocialLoginButtons from "./SocialLoginButtons";
@@ -8,6 +7,7 @@ import YesNoButtons from "./YesNoButtons";
 import InsuranceCard from "./InsuranceCard";
 import ReservationCard from "./ReservationCard";
 import ProviderCard from "./ProviderCard";
+import { captureEvent, ANALYTICS_EVENTS } from "@/lib/analytics";
 import { 
   Accordion,
   AccordionContent,
@@ -73,32 +73,42 @@ const OnboardingFlow = () => {
   const [selectedInsurance, setSelectedInsurance] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<string>("");
 
-  // Analytics tracking
-  const trackAnalytics = (event: string) => {
-    console.log(`Analytics event: ${event}`);
-    // In a real app, this would send data to an analytics service
+  // Analytics tracking using PostHog
+  const trackAnalytics = (event: string, properties?: Record<string, any>) => {
+    console.log(`Analytics event: ${event}`, properties);
+    captureEvent(event, properties);
   };
 
   const handleContinue = () => {
     if (currentStep === 1) {
-      trackAnalytics("symptom_selected");
+      trackAnalytics(ANALYTICS_EVENTS.SYMPTOM_SELECTED, { symptoms: selectedSymptoms });
     } else if (currentStep === 2) {
-      trackAnalytics("signup_completed");
+      trackAnalytics(ANALYTICS_EVENTS.SIGNUP_COMPLETED, { email_signup: email !== "" });
     } else if (currentStep === 3) {
-      trackAnalytics("residency_answered");
+      trackAnalytics(ANALYTICS_EVENTS.RESIDENCY_ANSWERED, { 
+        is_texas_resident: isTexasResident,
+        has_medicare: hasMedicare
+      });
     } else if (currentStep === 4) {
-      trackAnalytics("insurance_chosen");
+      trackAnalytics(ANALYTICS_EVENTS.INSURANCE_CHOSEN, { insurance: selectedInsurance });
     } else if (currentStep === 5) {
-      trackAnalytics("slot_reserved");
+      trackAnalytics(ANALYTICS_EVENTS.SLOT_RESERVED);
     } else if (currentStep === 6) {
-      trackAnalytics("intake_completed");
+      trackAnalytics(ANALYTICS_EVENTS.INTAKE_COMPLETED);
     } else if (currentStep === 7) {
-      trackAnalytics("provider_finalized");
+      trackAnalytics(ANALYTICS_EVENTS.PROVIDER_FINALIZED, { provider_id: selectedProvider });
       setCompleted(true);
     }
 
     if (currentStep < totalSteps) {
       setCurrentStep(currentStep + 1);
+      window.scrollTo(0, 0);
+    }
+  };
+
+  const handleBack = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
       window.scrollTo(0, 0);
     }
   };
@@ -109,12 +119,14 @@ const OnboardingFlow = () => {
 
   const handleGoogleLogin = () => {
     // Mock implementation
+    trackAnalytics("google_login_clicked");
     setEmail("user@example.com");
     handleContinue();
   };
 
   const handleAppleLogin = () => {
     // Mock implementation
+    trackAnalytics("apple_login_clicked");
     setEmail("user@example.com");
     handleContinue();
   };
@@ -122,11 +134,13 @@ const OnboardingFlow = () => {
   const handleEmailSignup = (e: React.FormEvent) => {
     e.preventDefault();
     if (email && password) {
+      trackAnalytics("email_signup_submitted", { has_email: !!email });
       handleContinue();
     }
   };
 
   const handleTexasResidency = (isResident: boolean) => {
+    trackAnalytics("texas_residency_answered", { is_resident: isResident });
     setIsTexasResident(isResident);
     if (!isResident) {
       toast({
@@ -139,6 +153,7 @@ const OnboardingFlow = () => {
   };
 
   const handleMedicare = (hasMedicareInsurance: boolean) => {
+    trackAnalytics("medicare_status_answered", { has_medicare: hasMedicareInsurance });
     setHasMedicare(hasMedicareInsurance);
     if (hasMedicareInsurance) {
       toast({
@@ -150,20 +165,29 @@ const OnboardingFlow = () => {
   };
 
   const handleInsuranceSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedInsurance(e.target.value);
+    const value = e.target.value;
+    trackAnalytics("insurance_selected", { insurance: value });
+    setSelectedInsurance(value);
   };
 
   const handleProviderSelect = (providerId: string) => {
+    trackAnalytics("provider_selected", { provider_id: providerId });
     setSelectedProvider(providerId);
     handleContinue();
   };
 
   const confirmReservation = () => {
+    trackAnalytics("booking_confirmed", { provider_id: selectedProvider });
     toast({
       title: "Booking Confirmed!",
       description: "Your appointment has been scheduled.",
     });
     setCompleted(true);
+  };
+
+  const startIntake = () => {
+    trackAnalytics(ANALYTICS_EVENTS.INTAKE_STARTED);
+    handleContinue();
   };
 
   const renderStep = () => {
@@ -177,10 +201,17 @@ const OnboardingFlow = () => {
           <p className="text-gray-600 mb-6">
             Your appointment is scheduled for Tuesday, 3:30 PM CT.
           </p>
-          <button className="btn btn-primary w-full mb-3">
+          <button 
+            className="btn btn-primary w-full mb-3"
+            onClick={() => trackAnalytics("add_to_calendar_clicked")}
+          >
             Add to Calendar
           </button>
-          <a href="#" className="text-legion-teal text-sm underline">
+          <a 
+            href="#" 
+            className="text-legion-teal text-sm underline"
+            onClick={() => trackAnalytics("manage_appointment_clicked")}
+          >
             Manage your appointment
           </a>
         </div>
@@ -345,7 +376,7 @@ const OnboardingFlow = () => {
               Complete your intake form to confirm this appointment
             </p>
             <button 
-              onClick={handleContinue}
+              onClick={startIntake}
               className="btn btn-primary w-full"
             >
               Finish intake to confirm
@@ -401,7 +432,10 @@ const OnboardingFlow = () => {
               >
                 Submit and continue
               </button>
-              <button className="text-legion-teal text-sm">
+              <button 
+                className="text-legion-teal text-sm"
+                onClick={() => trackAnalytics("save_for_later_clicked")}
+              >
                 Save & finish later
               </button>
             </div>
@@ -457,6 +491,8 @@ const OnboardingFlow = () => {
     <Layout 
       currentStep={currentStep} 
       totalSteps={totalSteps}
+      onBack={handleBack}
+      showBackButton={!completed && currentStep > 1}
     >
       <div className="py-4">
         {renderStep()}
